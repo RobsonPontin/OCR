@@ -12,17 +12,18 @@
         <MenuFlyout x:Key="imgContextMenu">
             <MenuFlyoutItem x:Name="copyText"
                             Text="Copy" 
-                            Tag="copy"/>
+                            Tag="copy"
+                            Click="copyText_Click"/>
         </MenuFlyout>
     </Page.Resources>
 
     <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="50"/>
+            <!--<RowDefinition Height="50"/>-->
             <RowDefinition/>
         </Grid.RowDefinitions>
 
-        <StackPanel Orientation="Horizontal">
+        <!--<StackPanel Orientation="Horizontal" Visibility="Collapsed">
             <Button x:Name="btnOpenImg"
                     Content="Open Img"
                     Click="btnOpenImg_Click"/>
@@ -31,9 +32,9 @@
                     Content="Apply OCR"
                     Margin="10 0 0 0"
                     Click="btnOcr_Click"/>
-        </StackPanel>
+        </StackPanel>-->
 
-        <Grid x:Name="ImageGrid" Grid.Row="1">
+        <Grid x:Name="ImageGrid">
             <Image x:Name="Img"
                    ContextFlyout="{StaticResource imgContextMenu}"/>
             

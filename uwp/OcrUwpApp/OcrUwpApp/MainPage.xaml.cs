@@ -19,19 +19,43 @@ using Windows.Graphics.Imaging;
 using Windows.Media.Ocr;
 using Windows.UI.Xaml.Shapes;
 using System.Threading.Tasks;
-
-// The Blank Page item template is documented at https://go.microsoft.com/fwlink/?LinkId=402352&clcid=0x409
+using Windows.ApplicationModel.DataTransfer;
 
 namespace OcrUwpApp
 {
-    /// <summary>
-    /// An empty page that can be used on its own or navigated to within a Frame.
-    /// </summary>
+    public class WordHolder
+    {
+        OcrWord mOcrWord;
+        Rect mWordBbox;
+
+        public WordHolder(OcrWord ocrWord)
+        {
+            mOcrWord = ocrWord;
+            mWordBbox = ocrWord.BoundingRect;
+        }
+
+        public double Width => mWordBbox.Width;
+
+        public double Height => mWordBbox.Height;
+
+        public Thickness Position => new Thickness(mWordBbox.Left, mWordBbox.Top, 0, 0);
+
+        public Rect WordRect => mWordBbox;
+
+        public String Text => mOcrWord.Text;
+
+        public void Transform(ScaleTransform scale)
+        {
+            mWordBbox = scale.TransformBounds(mOcrWord.BoundingRect);
+        }
+    }
+
     public sealed partial class MainPage : Page
     {
         // Bitmap holder of currently loaded image.
         private SoftwareBitmap mSoftwareBitmap;
-        private List<OcrWord> mOcrWords;
+        private List<WordHolder> mWordHolders;
+        private WordHolder mWordHolder;
 
         public MainPage()
         {
@@ -39,14 +63,20 @@ namespace OcrUwpApp
             this.Loaded += MainPage_Loaded;
 
             Img.PointerReleased += Img_PointerReleased;
+            Img.SizeChanged += Img_SizeChanged;
+        }
+
+        private void Img_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            UpdateWordBboxTransform();
         }
 
         private async void MainPage_Loaded(object sender, RoutedEventArgs e)
         {
-            var file = await StorageFile.GetFileFromApplicationUriAsync(new Uri("ms-appx:///Resources/OcrSampleImg.jpg"));
-
+            var file = await StorageFile.GetFileFromApplicationUriAsync(new Uri("ms-appx:///Resources/OcrSampleImg2.jpg"));
             await OpenImageFromFileAsync(file);
-            
+
+            await RunOcrAsync();
         }
 
         private void Img_PointerReleased(object sender, PointerRoutedEventArgs e)
@@ -54,12 +84,12 @@ namespace OcrUwpApp
             var curretPoint = e.GetCurrentPoint(Img);
             var currentPos = curretPoint.Position;
 
-            if (mOcrWords == null)
+            if (mWordHolders == null)
                 return;
 
-            foreach (var word in mOcrWords)
+            foreach (var word in mWordHolders)
             {
-                var WordRect = word.BoundingRect;
+                var WordRect = word.WordRect;
 
                 double x_min = WordRect.X;
                 double x_max = WordRect.X + WordRect.Width;
@@ -70,27 +100,30 @@ namespace OcrUwpApp
                 if ((currentPos.X > x_min && currentPos.X < x_max)
                     && (currentPos.Y > y_min && currentPos.Y < y_max))
                 {
-                    ShowBboxWord(word.BoundingRect);
+                    mWordHolder = word;
+
+                    ShowBboxWord(word);
                     break;
                 }
             }
-
         }
 
-        void ShowBboxWord(Rect bbox)
+        void ShowBboxWord(WordHolder word)
         {
             var rect = new Rectangle();
-            rect.Margin = new Thickness(bbox.Left, bbox.Top, bbox.Right, bbox.Bottom);
+            rect.Margin = word.Position;
+
+            rect.HorizontalAlignment = HorizontalAlignment.Left;
+            rect.VerticalAlignment = VerticalAlignment.Top;
             
-            rect.Width = bbox.Width;
-            rect.Height = bbox.Height;
+            rect.Width = word.Width;
+            rect.Height = word.Height;
             
             rect.Fill = new SolidColorBrush(Windows.UI.Colors.Red);
             rect.Opacity = 0.2;
 
             ImageGrid.Children.Add(rect);
         }
-
 
         private async void btnOpenImg_Click(object sender, RoutedEventArgs e)
         {
@@ -145,7 +178,7 @@ namespace OcrUwpApp
         async Task RunOcrAsync()
         {
             OcrEngine ocrEngine = null;
-            mOcrWords = new List<OcrWord>();
+            mWordHolders = new List<WordHolder>();
 
             // Try to create OcrEngine for first supported language from UserProfile.GlobalizationPreferences.Languages list.
             // If none of the languages are available on device, method returns null.
@@ -159,8 +192,7 @@ namespace OcrUwpApp
             // Recognize text from image.
             var ocrResult = await ocrEngine.RecognizeAsync(mSoftwareBitmap);
 
-            // Display recognized text.
-            var strResult = ocrResult.Text;
+            var sTransf = GetScaleTransform();
 
             // Create overlay boxes over recognized words.
             foreach (var line in ocrResult.Lines)
@@ -170,18 +202,55 @@ namespace OcrUwpApp
                 Rect lineRect = Rect.Empty;
                 foreach (var word in line.Words)
                 {
-                    mOcrWords.Add(word);
+                    var wHolder = new WordHolder(word);
+                    wHolder.Transform(sTransf);
+                    mWordHolders.Add(wHolder);
                 }
             }
 
+            // NOTE: display all results in a dialog
+            
+            // Display recognized text.
+            //var strResult = ocrResult.Text;
+            //var dialogResult = new ContentDialog();
+            //dialogResult.Content = strResult;
+            //dialogResult.PrimaryButtonText = "OK";
 
-
-            var dialogResult = new ContentDialog();
-            dialogResult.Content = strResult;
-            dialogResult.PrimaryButtonText = "OK";
-
-            await dialogResult.ShowAsync();
+            //await dialogResult.ShowAsync();
         }
 
+        private void UpdateWordBboxTransform()
+        {
+            if (mWordHolders == null)
+                return;
+
+            var scaleT = GetScaleTransform();
+            foreach (var word in mWordHolders)
+            {
+                word.Transform(scaleT);
+            }
+        }
+
+        private ScaleTransform GetScaleTransform()
+        {
+            // Need for text overlay
+            // Prepare scale transform for words since image is not diplayed in original size
+            var scaleTransf = new ScaleTransform
+            {
+                CenterX = 0,
+                CenterY = 0,
+                ScaleX = Img.ActualWidth / mSoftwareBitmap.PixelWidth,
+                ScaleY = Img.ActualHeight / mSoftwareBitmap.PixelHeight
+            };
+
+            return scaleTransf;
+        }
+
+        private void copyText_Click(object sender, RoutedEventArgs e)
+        {
+            DataPackage dp = new DataPackage();
+            dp.SetText(mWordHolder.Text);
+            Clipboard.SetContent(dp);
+        }
     }
 }
